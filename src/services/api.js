@@ -1,4 +1,4 @@
-const BASE = '/api'
+const BASE = `${import.meta.env.VITE_BACKEND_URI}/api`
 
 export const scanBarcode = async (barcode, servings = 1) => {
     const res = await fetch(`${BASE}/scan/barcode`, {
