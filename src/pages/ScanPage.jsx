@@ -1,19 +1,44 @@
 import React, { useState } from 'react'
-import { Barcode, FileText, ArrowLeft } from 'lucide-react'
+import { Camera, Barcode, FileText } from 'lucide-react'
 import BarcodeInput from '../components/BarcodeInput'
 import LabelInput from '../components/LabelInput'
 import ScanResult from '../components/ScanResult'
 import DailySummary from '../components/DailySummary'
-import { scanBarcode, scanLabel } from '../services/api'
+import { scanBarcode, scanLabelImage } from '../services/api'
 import { useHistory } from '../hooks/useHistory'
 
 export default function ScanPage() {
-    const [mode, setMode] = useState('barcode') // 'barcode' | 'label'
+    const [mode, setMode] = useState('label') // label is now PRIMARY
     const [loading, setLoading] = useState(false)
     const [result, setResult] = useState(null)
     const [error, setError] = useState(null)
     const { addEntry } = useHistory()
 
+    // Label scan — receives a File from LabelInput camera capture
+    const handleLabelSubmit = async (imageFile, servings) => {
+        setLoading(true)
+        setError(null)
+        setResult(null)
+        try {
+            const data = await scanLabelImage(imageFile, servings)
+            setResult(data)
+            addEntry(data)
+        } catch (err) {
+            if (err.status === 422) {
+                setError({
+                    type: 'parse_fail',
+                    message: 'AI could not read the nutrition values from this photo.',
+                    hint: 'Try again with better lighting, or make sure the nutrition facts panel fills the frame.',
+                })
+            } else {
+                setError({ type: 'error', message: err.error || 'Something went wrong.' })
+            }
+        } finally {
+            setLoading(false)
+        }
+    }
+
+    // Barcode scan — secondary option
     const handleBarcodeSubmit = async (barcode, servings) => {
         setLoading(true)
         setError(null)
@@ -26,31 +51,8 @@ export default function ScanPage() {
             if (err.status === 404) {
                 setError({
                     type: 'not_found',
-                    message: 'Product not found in database or Open Food Facts.',
-                    hint: 'Try scanning the nutrition label instead.',
-                })
-            } else {
-                setError({ type: 'error', message: err.error || 'Something went wrong.' })
-            }
-        } finally {
-            setLoading(false)
-        }
-    }
-
-    const handleLabelSubmit = async (labelText, servings) => {
-        setLoading(true)
-        setError(null)
-        setResult(null)
-        try {
-            const data = await scanLabel(labelText, servings)
-            setResult(data)
-            addEntry(data)
-        } catch (err) {
-            if (err.status === 422) {
-                setError({
-                    type: 'parse_fail',
-                    message: 'Could not extract sugar value from that text.',
-                    hint: err.hint || 'Make sure the text includes something like "Sugars 17g"',
+                    message: 'Product not found anywhere.',
+                    hint: 'Switch to label scan — point your camera at the nutrition facts panel instead.',
                 })
             } else {
                 setError({ type: 'error', message: err.error || 'Something went wrong.' })
@@ -65,51 +67,57 @@ export default function ScanPage() {
         setError(null)
     }
 
-    const switchToLabel = () => {
-        setError(null)
-        setMode('label')
-    }
-
     return (
         <div className="flex flex-col gap-5">
-            {/* Daily summary strip */}
             <DailySummary />
 
-            {/* Result view */}
             {result ? (
                 <ScanResult result={result} onReset={handleReset} />
             ) : (
                 <>
-                    {/* Mode tabs */}
-                    <div className="flex gap-1 p-1 bg-sugar-card border border-sugar-border rounded-xl">
-                        <TabBtn active={mode === 'barcode'} onClick={() => { setMode('barcode'); setError(null) }} icon={<Barcode size={14} />}>
-                            Barcode
+                    {/* Tabs — label first */}
+                    <div className="flex gap-1 p-1 rounded-xl"
+                        style={{ background: '#141414', border: '1px solid #222' }}>
+                        <TabBtn
+                            active={mode === 'label'}
+                            onClick={() => { setMode('label'); setError(null) }}
+                            icon={<Camera size={14} />}
+                            isPrimary
+                        >
+                            Scan Label
                         </TabBtn>
-                        <TabBtn active={mode === 'label'} onClick={() => { setMode('label'); setError(null) }} icon={<FileText size={14} />}>
-                            Scan label
+                        <TabBtn
+                            active={mode === 'barcode'}
+                            onClick={() => { setMode('barcode'); setError(null) }}
+                            icon={<Barcode size={14} />}
+                        >
+                            Barcode
                         </TabBtn>
                     </div>
 
-                    {/* Error state */}
+                    {/* Error */}
                     {error && (
-                        <div className="card p-4 border-sugar-high/30 bg-sugar-high/5 animate-fade-in">
-                            <p className="font-body text-sm text-sugar-high">{error.message}</p>
-                            {error.hint && <p className="font-body text-xs text-sugar-textDim mt-1">{error.hint}</p>}
-                            {error.type === 'not_found' && (
+                        <div className="p-4 rounded-2xl animate-fade-in"
+                            style={{ background: 'rgba(248,113,113,0.05)', border: '1px solid rgba(248,113,113,0.3)' }}>
+                            <p className="font-body text-sm" style={{ color: '#F87171' }}>{error.message}</p>
+                            {error.hint && (
+                                <p className="font-body text-xs mt-1" style={{ color: '#888' }}>{error.hint}</p>
+                            )}
+                            {error.type === 'not_found' && mode === 'barcode' && (
                                 <button
-                                    onClick={switchToLabel}
-                                    className="mt-3 flex items-center gap-1.5 text-xs font-mono text-sugar-accent hover:underline"
+                                    onClick={() => { setError(null); setMode('label') }}
+                                    className="mt-3 flex items-center gap-1.5 font-mono text-xs"
+                                    style={{ color: '#E8F54A' }}
                                 >
-                                    <FileText size={12} /> Switch to label scan
+                                    <Camera size={12} /> Switch to label scan
                                 </button>
                             )}
                         </div>
                     )}
 
-                    {/* Input */}
-                    {mode === 'barcode'
-                        ? <BarcodeInput onSubmit={handleBarcodeSubmit} loading={loading} />
-                        : <LabelInput onSubmit={handleLabelSubmit} loading={loading} />
+                    {mode === 'label'
+                        ? <LabelInput onSubmit={handleLabelSubmit} loading={loading} />
+                        : <BarcodeInput onSubmit={handleBarcodeSubmit} loading={loading} />
                     }
                 </>
             )}
@@ -117,17 +125,24 @@ export default function ScanPage() {
     )
 }
 
-function TabBtn({ active, onClick, icon, children }) {
+function TabBtn({ active, onClick, icon, children, isPrimary }) {
     return (
         <button
             onClick={onClick}
-            className={`flex-1 flex items-center justify-center gap-2 py-2.5 rounded-lg text-sm font-body transition-all duration-200 ${active
-                    ? 'bg-sugar-accent text-sugar-bg font-medium'
-                    : 'text-sugar-textDim hover:text-sugar-text'
-                }`}
+            className="flex-1 flex items-center justify-center gap-2 py-2.5 rounded-lg text-sm font-body transition-all duration-200"
+            style={{
+                background: active ? '#E8F54A' : 'transparent',
+                color: active ? '#0D0D0D' : '#888',
+                fontWeight: active ? 500 : 400,
+                position: 'relative',
+            }}
         >
             {icon}
             {children}
+            {isPrimary && !active && (
+                <span className="absolute -top-1 -right-1 w-2 h-2 rounded-full"
+                    style={{ background: '#E8F54A' }} />
+            )}
         </button>
     )
 }
