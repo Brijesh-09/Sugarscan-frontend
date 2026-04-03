@@ -20,18 +20,39 @@ export default function ScanPage() {
         setError(null)
         setResult(null)
         try {
+            console.log('[ScanPage] submitting label image — size:', imageFile?.size, 'type:', imageFile?.type)
+            if (!imageFile || imageFile.size === 0) {
+                setError({ type: 'error', message: 'No image captured. Please try taking the photo again.' })
+                return
+            }
             const data = await scanLabelImage(imageFile, servings)
             setResult(data)
             addEntry(data)
         } catch (err) {
+            console.error('[ScanPage] label scan error:', err)
             if (err.status === 422) {
                 setError({
                     type: 'parse_fail',
                     message: 'AI could not read the nutrition values from this photo.',
                     hint: 'Try again with better lighting, or make sure the nutrition facts panel fills the frame.',
                 })
+            } else if (err.status === 400) {
+                setError({
+                    type: 'error',
+                    message: err.error || 'Image could not be processed.',
+                    hint: 'Please try taking the photo again.',
+                })
+            } else if (err.status === 429) {
+                setError({
+                    type: 'error',
+                    message: 'AI quota exceeded. Please try again in a few minutes.',
+                })
             } else {
-                setError({ type: 'error', message: err.error || 'Something went wrong.' })
+                setError({
+                    type: 'error',
+                    message: err.error || err.message || 'Something went wrong.',
+                    hint: err.hint || null,
+                })
             }
         } finally {
             setLoading(false)
